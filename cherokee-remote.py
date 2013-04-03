@@ -22,7 +22,7 @@ from fabric.api import *
 
 # Variables:
 USER = "username"
-HOST="hostname.example.com"
+HOST="hostname"
 RPORT="9090"
 LPORT="9000"
 SSH_CONNECT="ssh -f -N -L %s:localhost:%s " % (LPORT, RPORT)
@@ -31,15 +31,15 @@ SSH_CONNECT="ssh -f -N -L %s:localhost:%s " % (LPORT, RPORT)
 # -d Detach mode, This creates a new session but doesn't  attach  to  it.
 # -S Session name
 # sleep 1 required, otherwise it will fail.
-CHEROKEE_ADMIN="screen -dmS CHEROKEE /usr/local/sbin/cherokee-admin -u -t; sleep 1"
+CHEROKEE_ADMIN="screen -dmS CHEROKEE cherokee-admin -u -t; sleep 1"
 
 # Env
 env.host_string = "%s@%s" % (USER, HOST)
-env.key_filename = ["/home/chek/.ssh/id_rsa"]
+#env.key_filename = ["/path/to/ssh/key"]
 #env.colors = True
-env.warn_only  = True
+env.warn_only  = True # Wont abort if remote command execution fails
 #env.show = ['debug'] 
-#fabric.state.output['running'] = False
+#fabric.state.output['running'] = True
 #env.output_prefix = False
 
 # Parser:
@@ -58,26 +58,12 @@ parser.add_argument('-v', '--verbose', action='store_true', help="Verbose On/Off
 parser.add_argument('-vv', '--debug', action='store_true', help="Debug On/Off; with fabric debug level On", default=False)
 parser.add_argument('-w', '--webpage', action='store_true', help='Opens the admin webpage in the web browser', default=False)
 
-
-
-#parser.add_argument("user", nargs="?", help='Username for ssh connection')
 # nargs="?" wont make error if missing argument
 args = parser.parse_args()
 
-#print 'Bright: ', args.level
-
-
-#if not args.level:
-  #print "No arguments"
-
-def main():
-  run("uname -a")
-  run("ifconfig")
-  local("uname -a")
-
 def setup():
   env.host_string = "%s@%s" % (USER, HOST)
-  env.key_filename = ["/home/chek/.ssh/id_rsa"]
+  env.key_filename = ["/path/to/ssh/key"]
   
 def get_cherokee_admin_pid():
   admin_pid = run("pidof cherokee-admin")
@@ -134,43 +120,6 @@ def browser_launch():
   finally:
    os.dup2(savout, 1)
   
-def verbose_level(level):
-  
-  # 0 -- disable
-  # 1 -- enable
-  # 2 -- enable with fabric debug
-  setting = False
-  
-  if level == 0:
-    setting = False
-    
-    for e in fabric.state.output:
-      fabric.state.output[e] = setting
-
-  # Verbose
-  if level == 1:
-    for e in fabric.state.output:
-      if e in ('status', 'output', 'running', 'stdout', 'stderr'):
-        fabric.state.output[e] = True
-      else:
-        fabric.state.output[e] = False
-      
-  # Verbose debug:
-  if level == 2:
-    setting = True
-    
-    for e in fabric.state.output:
-      fabric.state.output[e] = setting
-  
-  # Just disable for level 1.
- # if level == 1:
-  #  fabric.state.output['debug'] = False
-  
-  if level > 0:
-    print "Verbose Level func; level= %s" % str(level)
-    print "Fabric: fabric.state.output:"
-    print fabric.state.output
-  
 def start():
   # Start remote cherokee-admin
   run_cheroke_admin()
@@ -190,65 +139,82 @@ def stop():
 
 if __name__ == '__main__':
   
+  # Define verbose_level
+  show_var= 'output'
+  hide_var = 'everything'
+ 
   if args.verbose:
-    print "Arguments= %s" % args
-    verbose_level(1)
+    show_var = 'everything'
+    hide_var = 'warnings'
+    
   if args.debug:
-    print "Arguments= %s" % args
-    verbose_level(2)
+    show_var = 'everything'
+    hide_var = 'aborts'
+    fabric.state.output['debug'] = True
+    
+    
   # Not verbose or debug:
-  else:
-    verbose_level(0)
   
+  # Debug hide settings:
   #with hide():
-  #with show('output', 'running', 'stdout', 'stderr'):
-  #print fabric.state.output
-
-  # Check for arguments:
-  if len(sys.argv) == 1:
-    parser.print_help()
-  else:
+  with settings(show(show_var), hide(hide_var)) :
     
-    # Test if we have a valid host:
-    if not test_hostname(args.host):
-      print "DNS error, host can't be resolve. Host: %s" % args.host
-      exit()
+    if args.debug:
+      print "Arguments to command= %s" % args
+      print "Fabric.state.output Variable:"
+      print fabric.state.output
     
-    # Start cherokee-admin:
-    if args.admin:
-      run_cheroke_admin()
-    
-    # Open Webpage
-    if args.webpage:
-      browser_launch()
-    
-    # Set the host_string variable with args variable:
-    # there will always be these 2 variables because of the defaults:
-    if args.user and args.host:
-      env.host_string = "%s@%s" % (args.user, args.host)
+    # Check for arguments:
+    if len(sys.argv) == 1:
+      parser.print_help()
+    else:
       
-    if args.tunnel:
-      print "Creating tunnel"
-      cherokee_admin_tunnel()
+      # Test if we have a valid host:
+      if not test_hostname(args.host):
+        print "DNS error, host can't be resolve. Host: %s" % args.host
+        exit()
       
-    if args.start:
-      print "Starting Cherokee-remote"
-      start()
+      # Start cherokee-admin:
+      if args.admin:
+        run_cheroke_admin()
       
-    if args.stop:
-      print "Stoping Cherokee-remote"
-      stop()
+      # Open Webpage
+      if args.webpage:
+        browser_launch()
       
-    if args.status:
-      print "***Current cherokee status***"
-      admin_pid = get_cherokee_admin_pid()
-      tunnel_pid = get_cherokee_admin_tunnel_pid()
-      
-      status = "BAD!!!"
-      if admin_pid and tunnel_pid:
-        status = "OK!"
+      # Set the host_string variable with args variable:
+      # there will always be these 2 variables because of the defaults:
+      if args.user and args.host:
+        env.host_string = "%s@%s" % (args.user, args.host)
         
-      print "Status: %s" % status        
-      print "Remote cherokee-admin pid: %s" % admin_pid
-      print "Tunnel pid: %s" % tunnel_pid
-
+      if args.tunnel:
+        print "Creating tunnel"
+        cherokee_admin_tunnel()
+        
+      if args.start:
+        print "Starting Cherokee-remote"
+        start()
+        
+      if args.stop:
+        print "Stoping Cherokee-remote"
+        stop()
+        
+      if args.status:
+        print "***Current cherokee-remote status***"
+        admin_pid = get_cherokee_admin_pid()
+        tunnel_pid = get_cherokee_admin_tunnel_pid()
+        
+        status = "BAD!!!"
+        if admin_pid and tunnel_pid:
+          status = "OK!"
+          
+        print "Status: %s" % status        
+        print "Remote cherokee-admin pid: %s" % admin_pid
+        print "Tunnel pid: %s" % tunnel_pid
+        
+        
+      # No action message:
+      if not ( args.tunnel or args.start or args.stop or args.status or args.admin or args.webpage ):
+        parser.print_help()
+        print ""
+        print "**** No action specified****"
